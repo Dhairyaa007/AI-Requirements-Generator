@@ -1,234 +1,136 @@
 import streamlit as st
 from groq import Groq
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import letter
+import io
 import os
-from dotenv import load_dotenv
+
 
 # -----------------------------
-# LOAD ENV
+# CONFIG
 # -----------------------------
-load_dotenv()
-
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+st.set_page_config(page_title="AI Requirements Assistant", layout="wide")
+
+st.title("AI Requirements Engineering Assistant")
+st.caption("Consulting-grade AI tool for generating and evaluating software requirements")
+
 # -----------------------------
-# PAGE CONFIG
+# INPUTS
 # -----------------------------
-st.set_page_config(
-    page_title="AI StoryForge",
-    page_icon="🎮",
-    layout="wide"
+industry = st.selectbox(
+    "Select Industry",
+    ["General", "Banking", "Healthcare", "Retail", "Government"]
 )
 
-# -----------------------------
-# UI HEADER
-# -----------------------------
-st.markdown(
-    """
-    <h1 style='text-align: center; color: #6C63FF;'>🎮 AI StoryForge</h1>
-    <p style='text-align: center; font-size:18px;'>
-    Interactive AI-powered choose-your-own-adventure game
-    </p>
-    """,
-    unsafe_allow_html=True
-)
+requirement = st.text_area("Enter Business Requirement")
 
-st.divider()
-
-# -----------------------------
-# SIDEBAR SETTINGS
-# -----------------------------
-st.sidebar.title("⚙️ Game Settings")
-
-theme = st.sidebar.selectbox(
-    "Story Theme",
-    ["Sci-Fi 🚀", "Fantasy 🏰", "Horror 👻", "Mystery 🕵️", "Comedy 😂"]
-)
-
-difficulty = st.sidebar.selectbox(
-    "Difficulty Level",
-    ["Easy", "Medium", "Hard"]
-)
-
-
-if st.sidebar.button("🔄 Restart Game"):
-    st.session_state.clear()
-    st.rerun()
-
-# -----------------------------
-# SESSION STATE INIT
-# -----------------------------
-if "story_history" not in st.session_state:
-    st.session_state.story_history = ""
-
-if "current_scene" not in st.session_state:
-    st.session_state.current_scene = ""
-
-if "choices" not in st.session_state:
-    st.session_state.choices = []
+generate = st.button("Generate Analysis")
 
 # -----------------------------
 # AI FUNCTION
 # -----------------------------
-def generate_scene(prompt, history=""):
-    system_prompt = f"""
-You are an interactive story game engine.
+def generate_requirements(text, industry):
 
-Theme: {theme}
-Difficulty: {difficulty}
+    system_prompt = f"""
+You are a Senior Business Analyst working in a top consulting firm.
+
+Industry: {industry}
+
+Convert business requirements into structured consulting-grade documentation.
+
+Generate:
+
+1. User Story (Agile format)
+2. Acceptance Criteria (detailed)
+3. Functional Requirements
+4. Test Cases (positive + negative)
+5. Edge Cases
+6. Risks & Assumptions
+7. Dependencies
+8. AI / Automation Opportunities
+9. Requirement Quality Score Section:
+   - Clarity Score (1-10)
+   - Risk Score (1-10)
+   - Completeness Score (1-10)
+   - Key Issues
+   - Recommendations
 
 Rules:
-- Create immersive storytelling
-- Keep scene medium length
-- Always end with EXACTLY 3 choices
-- Choices must be meaningful and different
-- Keep tone consistent with theme
-
-OUTPUT FORMAT:
-
-STORY:
-<story text>
-
-CHOICES:
-1. <choice 1>
-2. <choice 2>
-3. <choice 3>
+- Be structured and professional
+- Tailor to industry context
+- Think like a consultant
+- Be concise but complete
 """
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": history + "\n\n" + prompt}
+            {"role": "user", "content": text}
         ]
     )
 
     return response.choices[0].message.content
 
 # -----------------------------
-# EXTRACT CHOICES
+# PDF GENERATOR
 # -----------------------------
-def extract_choices(text):
-    try:
-        if "CHOICES:" not in text:
-            return ["Continue", "Explore", "Wait"]
+def create_pdf(text, industry, requirement):
+    buffer = io.BytesIO()
 
-        choices_part = text.split("CHOICES:")[1]
-        lines = choices_part.strip().split("\n")
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
 
-        choices = []
-        for line in lines:
-            if line.strip():
-                choice = line.split(".", 1)[-1].strip()
-                if choice:
-                    choices.append(choice)
+    content = []
 
-        return choices[:3] if len(choices) >= 3 else choices
+    content.append(Paragraph("AI Requirements Engineering Report", styles["Title"]))
+    content.append(Spacer(1, 12))
 
-    except:
-        return ["Continue", "Explore", "Wait"]
+    content.append(Paragraph(f"<b>Industry:</b> {industry}", styles["Normal"]))
+    content.append(Spacer(1, 12))
 
-# -----------------------------
-# START STORY INPUT
-# -----------------------------
-formatted_scene = st.session_state.current_scene.replace("\n", "<br>")
-st.subheader("🧠 Start Your Adventure")
+    content.append(Paragraph("<b>Business Requirement:</b>", styles["Heading2"]))
+    content.append(Paragraph(requirement, styles["Normal"]))
+    content.append(Spacer(1, 12))
 
-start = st.text_area(
-    "Enter your story idea",
-    placeholder="e.g. A hacker wakes up inside a broken simulation..."
-)
+    content.append(Paragraph("<b>AI Analysis:</b>", styles["Heading2"]))
+    content.append(Paragraph(text.replace("\n", "<br/>"), styles["Normal"]))
 
-start_btn = st.button("🚀 Start Adventure")
+    doc.build(content)
+
+    buffer.seek(0)
+    return buffer
 
 # -----------------------------
-# START GAME
+# OUTPUT UI
 # -----------------------------
-if start_btn:
-    if start.strip() == "":
-        st.warning("Please enter a story idea first.")
+if generate:
+    if requirement.strip() == "":
+        st.warning("Please enter a business requirement first")
     else:
-        with st.spinner("Generating your world..."):
-            scene = generate_scene(start)
-            st.session_state.current_scene = scene
-            st.session_state.story_history = start
-            st.session_state.choices = extract_choices(scene)
+        with st.spinner("Generating consulting-grade analysis..."):
+            output = generate_requirements(requirement, industry)
 
-# -----------------------------
-# DISPLAY STORY
-# -----------------------------
-if st.session_state.current_scene:
+        st.success("Analysis Complete")
 
-    st.divider()
+        st.markdown(output)
 
-    st.markdown(
-        f"""
-        <div style="
-            background-color:#111827;
-            padding:20px;
-            border-radius:12px;
-            color:white;
-            font-size:16px;
-            line-height:1.6;
-        ">
-        {formatted_scene}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        st.divider()
 
-    st.divider()
+        st.subheader("📊 Requirement Quality Dashboard")
+        st.info("AI evaluates clarity, risk, and completeness of the requirement.")
 
-    # -----------------------------
-    # CHOICES UI
-    # -----------------------------
-    st.subheader("🎯 What do you do next?")
+        # -----------------------------
+        # PDF DOWNLOAD
+        # -----------------------------
+        pdf_buffer = create_pdf(output, industry, requirement)
 
-    choice = st.radio(
-        "Choose your action:",
-        st.session_state.choices
-    )
-
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        next_btn = st.button("➡️ Continue Story")
-
-    with col2:
-        restart_btn = st.button("🔄 Reset Story")
-
-    # -----------------------------
-    # CONTINUE STORY
-    # -----------------------------
-    if next_btn:
-        with st.spinner("The story evolves..."):
-
-            new_prompt = f"""
-User chose: {choice}
-
-Continue the story based on this decision.
-Make it feel like a continuous interactive narrative.
-"""
-
-            next_scene = generate_scene(new_prompt, st.session_state.story_history)
-
-            st.session_state.story_history += "\n" + choice
-            st.session_state.current_scene = next_scene
-            st.session_state.choices = extract_choices(next_scene)
-
-            st.rerun()
-
-    # -----------------------------
-    # RESET
-    # -----------------------------
-    if restart_btn:
-        st.session_state.clear()
-        st.rerun()
-
-# -----------------------------
-# FOOTER
-# -----------------------------
-st.markdown("---")
-st.markdown(
-    "<p style='text-align:center; color:gray;'>Built with Streamlit + Groq AI</p>",
-    unsafe_allow_html=True
-)
+        st.download_button(
+            label="📄 Download Consulting Report (PDF)",
+            data=pdf_buffer,
+            file_name="AI_Requirements_Report.pdf",
+            mime="application/pdf"
+        )
